@@ -50,7 +50,9 @@ Add a short section to the **repo's** AGENTS.md so future sessions know:
 
 - the gate is mandatory before any push, version bump, or release cut;
 - the variable values (or a pointer to this skill's `config.sh`);
-- the reviewer switches in force.
+- the reviewer switches in force;
+- when cutting a release, keep `.claude-plugin/plugin.json` `version` in sync with
+  the tag.
 
 ## 5. Do not change
 

@@ -1,6 +1,13 @@
 ---
 name: gatekeeper
-description: The adversarial release-verification step for any repo that ships from work orders. Runs between "all tasks ticked" and push/release: verifies every [x] against the committed HEAD (task truth), then a fresh-session reviewer fleet (Red Team, Code Reviewer, Security Reviewer, Scrutinizer, Repo Auditor, Ponytail Reviewer, Architect) with mandate cards, findings verified first-hand, and a deterministic verdict computed from evidence. Trigger on /gatekeeper, and mandatorily before any work-order push, version bump, or release cut — nobody grades their own exam.
+description: >-
+  The adversarial release-verification step for any repo that ships from work orders.
+  Runs between "all tasks ticked" and push/release: verifies every [x] against the
+  committed HEAD (task truth), then a fresh-session reviewer fleet (Red Team, Code
+  Reviewer, Security Reviewer, Scrutinizer, Repo Auditor, Ponytail Reviewer, Architect)
+  with mandate cards, findings verified first-hand, and a deterministic verdict computed
+  from evidence. Trigger on /gatekeeper, and mandatorily before any work-order push,
+  version bump, or release cut — nobody grades their own exam.
 ---
 
 # Gatekeeper

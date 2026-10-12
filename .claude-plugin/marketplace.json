@@ -1,0 +1,20 @@
+{
+  "name": "gatekeeper",
+  "owner": {
+    "name": "Hashan Wickramasinghe"
+  },
+  "description": "Adversarial release-verification skill for any repo that ships from work orders.",
+  "plugins": [
+    {
+      "name": "gatekeeper",
+      "source": "./",
+      "description": "Adversarial release-verification skill",
+      "category": "review",
+      "keywords": [
+        "release",
+        "review",
+        "verification"
+      ]
+    }
+  ]
+}

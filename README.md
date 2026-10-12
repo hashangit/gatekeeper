@@ -1,5 +1,7 @@
 # gatekeeper
 
+[![skills.sh](https://skills.sh/b/hashangit/gatekeeper?style=for-the-badge)](https://skills.sh/hashangit/gatekeeper)
+
 An adversarial release-verification skill for any repo that ships from work orders.
 It sits between "all tasks ticked" and "pushed": a deterministic gate pass, task-truth
 grading, a fleet of fresh-session reviewer subagents, a computed verdict, and a
@@ -15,8 +17,29 @@ folder. No external skill dependencies. MIT-credited adaptations are listed in
 
 ## Install
 
-Copy this folder into your repo (or your agent's skills folder) as
-`.agents/skills/gatekeeper/`. Then set it up — next section.
+**One command, any agent (recommended):**
+
+```bash
+npx skills add hashangit/gatekeeper
+```
+
+The [skills CLI](https://github.com/vercel-labs/skills) auto-detects which coding agents you have
+installed and installs the skill into each one. Covers Claude Code, Codex, Antigravity, ZCode,
+OpenCode, Pi, Qwen Code, Kimi Code, Cursor, Gemini CLI, GitHub Copilot, Goose, Windsurf, and 60+
+more. Useful flags: `-g` (global install), `-a <agent>` (specific target), `--copy` (no symlinks).
+For agents not in the list, `-a universal` installs to `.agents/skills/` — the standard location
+most agents read.
+
+**Claude Code plugin:**
+
+```
+/plugin marketplace add hashangit/gatekeeper
+/plugin install gatekeeper@gatekeeper
+```
+
+**Manual copy** (works for any agent): copy this folder into the agent's skills directory —
+`.agents/skills/gatekeeper/` (project) or `~/.claude/skills/gatekeeper/` (global). Then set it up —
+next section.
 
 ## Setup — the variable family
 

@@ -43,9 +43,9 @@ exact sealed commit is what gets built.
    slate, so the first cut doesn't deadlock on the version-match guard.
 5. **Dry run, then cut:**
    ```bash
-   bash .agents/skills/gatekeeper/scripts/publish.sh patch --dry-run
+   bash <this-skill-folder>/scripts/publish.sh patch --dry-run
    # ...run the gate first on the real thing, then:
-   bash .agents/skills/gatekeeper/scripts/publish.sh patch
+   bash <this-skill-folder>/scripts/publish.sh patch
    ```
    The script watches the CI run and prints the release link on success.
 

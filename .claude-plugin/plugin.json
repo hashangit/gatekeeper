@@ -1,0 +1,17 @@
+{
+  "name": "gatekeeper",
+  "displayName": "Gatekeeper",
+  "version": "1.0.1",
+  "description": "Adversarial release-verification: task-truth grading, fresh-session reviewer fleet, deterministic verdict, then the release cut.",
+  "author": {
+    "name": "Hashan Wickramasinghe"
+  },
+  "repository": "https://github.com/hashangit/gatekeeper",
+  "license": "MIT",
+  "keywords": [
+    "release",
+    "review",
+    "verification",
+    "skills"
+  ]
+}
