@@ -1,0 +1,44 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Agent Skills reference validator
+        run: python3 -m pip install 'git+https://github.com/agentskills/agentskills.git@69ef37e9424c0a7ea9dd2293b559e43ec8176379#subdirectory=skills-ref'
+      - name: Validate skill bundles
+        run: |
+          python3 scripts/check-skills.py
+          python3 scripts/sync-skills.py --check
+          skills-ref validate skills/gatekeeper
+          skills-ref validate skills/gatekeeper-review
+          skills-ref validate skills/gatekeeper-release
+          bash -n skills/gatekeeper/scripts/publish.sh
+          node --check skills/gatekeeper/scripts/generate-release-notes.mjs
+      - name: Verify plugin version matches tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          test "$RELEASE_TAG" = "v$(node -p "require('./.claude-plugin/plugin.json').version")"
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release create "$RELEASE_TAG" --verify-tag --title "$RELEASE_TAG" --notes-file "RELEASE_NOTES-${RELEASE_TAG}.md"

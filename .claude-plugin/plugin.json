@@ -2,7 +2,7 @@
   "name": "gatekeeper",
   "displayName": "Gatekeeper",
   "version": "1.0.1",
-  "description": "Adversarial release-verification: task-truth grading, fresh-session reviewer fleet, deterministic verdict, then the release cut.",
+  "description": "Gatekeeper router, full adversarial implementation review, and release verification with mandatory explicit user consent for release operations.",
   "author": {
     "name": "Hashan Wickramasinghe"
   },

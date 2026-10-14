@@ -3,12 +3,12 @@
   "owner": {
     "name": "Hashan Wickramasinghe"
   },
-  "description": "Adversarial release-verification skill for any repo that ships from work orders.",
+  "description": "Gatekeeper Review and Gatekeeper Release, with a Review-default router and explicit release consent.",
   "plugins": [
     {
       "name": "gatekeeper",
       "source": "./",
-      "description": "Adversarial release-verification skill",
+      "description": "Gatekeeper Review and Gatekeeper Release, with a Review-default router and explicit release consent.",
       "category": "review",
       "keywords": [
         "release",

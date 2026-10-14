@@ -1,62 +1,50 @@
-# AGENTS.md — adapting gatekeeper to this repo
+# Working on Gatekeeper
 
-You are an agent setting up the gatekeeper skill for the repository you are in.
-Follow these steps in order. Do not skip the ordering: configuration before CI, CI
-before the first gate.
+This repository distributes three skills, rather than an npm package. Repo-specific
+configuration remains a template until a skill is installed into a target repo.
 
-## 1. Fill the variable family
+## Ownership and checks
 
-Open `config.sh` in this skill folder and replace every `<set-me>`:
+- Edit `skills/gatekeeper/`, the canonical router and workflow source.
+- `skills/gatekeeper-review/` and `skills/gatekeeper-release/` are generated bundles.
+  Run `python3 scripts/sync-skills.py` after changing canonical content.
+- Run `python3 scripts/sync-skills.py --check` and
+  `python3 scripts/check-skills.py` before completing changes. CI also validates
+  all three entrypoints against the Agent Skills specification.
+- Preserve bundled third-party source skills and their credits.
 
-- `REVIEW_FOLDER_PATH` — pick (or create) the folder where release review receipts
-  are written. Inside the repo (e.g. `Reviews/`) or a docs store both work; pick what
-  this repo already uses for review records.
-- `IMPLEMENTATION_SPEC_PATH` — where this repo keeps specs and planning docs. If it
-  keeps none, propose a folder and create it when the first spec lands.
-- `WORK_ORDER_PATH` — where work-order task files live or should be created. The
-  convention this skill grades against is a checklist file with `[x]` rows and a
-  verify line per task; if the repo's work orders live elsewhere, point at that path.
-- `PACKAGE_NAME` — the released package's name from the manifest. For a monorepo
-  releasing two packages in lockstep (core + root), also set `CORE_PACKAGE_NAME`;
-  otherwise leave it empty.
-- `GATE_TEST_CMD` / `GATE_BUILD_CMD` — the exact commands that run the full suite and
-  the build in this repo (check `package.json` scripts, `Makefile`, `justfile`…).
-  Set `GATE_PROBES_CMD` / `GATE_EXAMPLES_CMD` only if such gates exist.
-- `RELEASE_CI_WORKFLOW` — the tag-triggered workflow's file name (default
-  `release.yml`; confirm against `.github/workflows/`).
-- `RELEASE_NOTES_CMD`, `HOMEBREW_TAP_REPO` — leave empty unless the repo has a notes
-  generator / a tap.
+## Review and release policy
 
-Then **mirror every value** into the entry `SKILL.md` § Configuration — that copy is
-what the gate agent reads at run time. The two places must never disagree.
+The gate is mandatory before any push, version bump, or release cut. This is a
+prerequisite, never user consent. Gatekeeper defaults to Review. Enter Release only
+when the user explicitly requests it; if the model proposes Release, ask for explicit
+confirmation and wait. Commit creation, version bumps, tags, pushes, publishing,
+and release CI retries need explicit consent covering those actions and target.
+A passing review never authorizes a release.
 
-Report any value you could not determine to the user instead of guessing.
+Review includes the entire original six-phase review gate and all seven reviewer
+mandates. All switches default to Enabled. Preserve the verdict rules, fresh-session
+rule, committed-HEAD seal, and two-repair limit. The implementing agent cannot run
+its own gate; lack of fresh independent sessions is BLOCKED.
 
-## 2. Wire CI (once)
+When cutting an explicitly authorized release, keep `.claude-plugin/plugin.json`
+version in sync with the tag. Do not bump it merely for local skill edits.
+For this repository's release config and GitHub Release flow, follow
+[RELEASE_PROCESS.md](RELEASE_PROCESS.md). The packaged `skills/gatekeeper/config.sh`
+stays generic for installs into other repos.
 
-Follow [FIRST_INSTALL.md](FIRST_INSTALL.md): copy and adapt the release workflow,
-set the registry secret (`NPM_TOKEN` or your registry's equivalent), add the tap
-token only if `HOMEBREW_TAP_REPO` is set.
+## Adapting an installation to a target repo
 
-## 3. Set the reviewer switches
+Follow [the setup instructions](skills/gatekeeper/references/setup.md). Fill the
+installed skill's `config.sh` and mirror every applicable value in its workflow
+Configuration section. Report any value that cannot be determined instead of
+guessing. For the router, mirror review values in both workflow references.
 
-`SKILL.md` § Reviewer switches, one boolean per reviewer, all Enabled by default.
-Turn a reviewer off only when the user asks or the repo has no surface for it (e.g.
-no docs → the Scrutinizer has nothing to walk — say so, don't silently disable).
+Review setup uses only review paths and gates. Release setup additionally follows
+[FIRST_INSTALL.md](skills/gatekeeper/FIRST_INSTALL.md): configuration before CI,
+CI before the first release gate. Never make Review depend on release setup.
 
-## 4. Teach the repo's AGENTS.md
-
-Add a short section to the **repo's** AGENTS.md so future sessions know:
-
-- the gate is mandatory before any push, version bump, or release cut;
-- the variable values (or a pointer to this skill's `config.sh`);
-- the reviewer switches in force;
-- when cutting a release, keep `.claude-plugin/plugin.json` `version` in sync with
-  the tag.
-
-## 5. Do not change
-
-The verdict rules, the fresh-session rule, the seal discipline, and the two-repair
-loop are the gate's spine — adapt configuration, never these. If a step genuinely
-cannot work in this repo, surface that; do not quietly rewrite the gate around the
-obstacle.
+Turn a reviewer off only at the user's request or when the repo has no applicable
+surface, and explain why. Teach the target repo's AGENTS.md the gate prerequisite,
+config location, reviewer switches, explicit release consent rule, and plugin/tag
+version synchronization. Never rewrite gate rules around an adaptation obstacle.

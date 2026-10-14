@@ -1,92 +1,135 @@
-# gatekeeper
+# Gatekeeper
 
 [![skills.sh](https://skills.sh/b/hashangit/gatekeeper?style=for-the-badge)](https://skills.sh/hashangit/gatekeeper)
 
-An adversarial release-verification skill for any repo that ships from work orders.
-It sits between "all tasks ticked" and "pushed": a deterministic gate pass, task-truth
-grading, a fleet of fresh-session reviewer subagents, a computed verdict, and a
-receipt — then, and only then, the release cut and CI publishing.
+Gatekeeper reviews implemented changes through deterministic checks, task-truth
+grading, independent fresh reviewers, verified findings, a computed verdict, and a
+receipt. Release operations require explicit user consent.
 
-> **Nobody grades their own exam.** The agent that implemented the work never runs the
-> gate on it, and every reviewer runs in a fresh session that has never seen the
-> implementer's reasoning.
+| Skill | Use |
+|---|---|
+| [Gatekeeper](skills/gatekeeper/SKILL.md) | Router. Defaults to Review; Release requires an explicit user request or confirmation. |
+| [Gatekeeper Review](skills/gatekeeper-review/SKILL.md) | The entire original review flow, ending with a verdict and receipt. |
+| [Gatekeeper Release](skills/gatekeeper-release/SKILL.md) | The full review gate plus consent-controlled commit and release operations. |
 
-Self-contained: the reviewer methods, the steps, and the scripts all ship inside this
-folder. No external skill dependencies. MIT-credited adaptations are listed in
-[resources/README.md](resources/README.md).
+"Nobody grades their own exam" applies to both workflows. The implementing agent
+hands the gate to an independent fresh session. Each reviewer also starts fresh,
+without the implementer's reasoning or summaries. If isolation is unavailable,
+the gate reports BLOCKED.
 
 ## Install
 
-**One command, any agent (recommended):**
+Install all three skills:
 
 ```bash
-npx skills add hashangit/gatekeeper
+npx skills add hashangit/gatekeeper --skill gatekeeper gatekeeper-review gatekeeper-release
 ```
 
-The [skills CLI](https://github.com/vercel-labs/skills) auto-detects which coding agents you have
-installed and installs the skill into each one. Covers Claude Code, Codex, Antigravity, ZCode,
-OpenCode, Pi, Qwen Code, Kimi Code, Cursor, Gemini CLI, GitHub Copilot, Goose, Windsurf, and 60+
-more. Useful flags: `-g` (global install), `-a <agent>` (specific target), `--copy` (no symlinks).
-For agents not in the list, `-a universal` installs to `.agents/skills/` — the standard location
-most agents read.
+Or install one skill by its name. Every skill is self-contained, including the
+router, so a copied installation never depends on a sibling skill being present.
 
-**Claude Code plugin:**
-
+```bash
+npx skills add hashangit/gatekeeper --skill gatekeeper-review
 ```
+
+For the Claude Code plugin:
+
+```text
 /plugin marketplace add hashangit/gatekeeper
 /plugin install gatekeeper@gatekeeper
 ```
 
-**Manual copy** (works for any agent): copy this folder into the agent's skills directory —
-`.agents/skills/gatekeeper/` (project) or `~/.claude/skills/gatekeeper/` (global). Then set it up —
-next section.
+For a manual installation, copy the chosen folder from `skills/` into the agent's
+skills directory. Keep the folder name and its complete contents. For example,
+copy `skills/gatekeeper-review/` to `.agents/skills/gatekeeper-review/`.
 
-## Setup — the variable family
+Existing installations of the old root skill must update to this layout. Configure
+the installed skill you actually invoke; copied installations have separate configs.
 
-The skill adapts to your repo through one family of variables. You set each value in
-**two places**: `SKILL.md` § Configuration (what the gate agent reads) and
-`config.sh` (what the scripts source). `<set-me>` = required; empty = feature off.
+## Usage and consent
 
-| Variable | Meaning | Example |
-|---|---|---|
-| `REVIEW_FOLDER_PATH` | Where gate review receipts are written | `~/docs/reviews/` |
-| `IMPLEMENTATION_SPEC_PATH` | Where specs and planning documentation live | `~/docs/specs/` |
-| `WORK_ORDER_PATH` | Where work orders live or are created | `$IMPLEMENTATION_SPEC_PATH/<spec>/<work-order>/tasks.md` |
-| `PACKAGE_NAME` | The package this skill releases | `my-app` |
-| `CORE_PACKAGE_NAME` | Optional second package released in lockstep | `my-app-core` |
-| `GATE_TEST_CMD` | The full test gate, run verbatim in Phase 0 | `pnpm test` / `npm ci && npm t` |
-| `GATE_BUILD_CMD` | The build gate | `pnpm build` / `npm run build` |
-| `GATE_PROBES_CMD` | Optional probe / deep-check gate | `pnpm test:probes` |
-| `GATE_EXAMPLES_CMD` | Optional examples / docs gate | `vitest run examples/` |
-| `RELEASE_CI_WORKFLOW` | Tag-triggered workflow under `.github/workflows/` | `release.yml` |
-| `RELEASE_NOTES_CMD` | Optional custom notes generator | empty = bundled generator |
-| `HOMEBREW_TAP_REPO` | Optional Homebrew tap as `owner/repo` | `me/homebrew-tap` |
+- "Use Gatekeeper to review this implemented work order." selects Review.
+- "Use Gatekeeper Review on this branch." runs the complete review gate.
+- "Run Gatekeeper Release checks." authorizes release verification only.
+- "Cut and publish version 1.2.3 with Gatekeeper Release." explicitly requests the
+  named release operations, subject to the gate passing.
 
-**Humans:** fill `config.sh`, mirror the values into `SKILL.md` § Configuration, done.
-**Agents:** hand your agent [AGENTS.md](AGENTS.md) — it walks the same setup, wires
-CI, and sets reviewer switches.
+If the model wants to enter Release, it must ask for explicit user confirmation
+and wait. A PASS, completed implementation, silence, or a repo policy requiring a
+gate before push never authorizes Release. Commit creation, version bumps, tags,
+pushes, publishing, and release CI retries require consent covering the actual
+actions and target. A dry run never authorizes a real cut.
 
-Then do the one-time CI wiring in [FIRST_INSTALL.md](FIRST_INSTALL.md), read the
-publishing practice in [PUBLISHING.md](PUBLISHING.md), and run your first gate.
+## Setup
 
-## The flow
+These are reusable skills, so `<set-me>` values deliberately remain unresolved in
+the distribution. Fill them for the target repo, never guess missing values.
+Follow [the setup instructions](skills/gatekeeper/references/setup.md).
 
-```mermaid
-flowchart TD
-    A["Work order is finished<br>every task ticked off"] --> B["Release gate starts<br>run by someone other than the implementer"]
-    B --> C["Run the checks<br>tests, probes, examples, build"]
-    C --> D{"Everything green?"}
-    D -- "No" --> X["FAIL - stop here<br>fix the problem first"]
-    D -- "Yes" --> E["Freeze the exact commit<br>so nothing can change mid-review"]
-    E --> F["Check every task claim<br>against that frozen commit"]
-    F --> G{"Is every claim true?"}
-    G -- "No" --> X
-    G -- "Yes" --> H["Seven fresh reviewers look it over<br>Red Team, Code Reviewer, Security Reviewer,<br>Scrutinizer, Repo Auditor, Ponytail, Architect"]
-    H --> I["The gate keeper re-tests<br>every serious finding in person"]
-    I --> J{"Real problems found?"}
-    J -- "Yes" --> K["Fix and go around again<br>at most two attempts,<br>then call the owner"]
-    K --> B
-    J -- "No" --> L["PASS - write the receipt<br>saved in the reviews folder"]
-    L --> M["Cut the release<br>publish.sh bumps the version,<br>writes the notes, tags and pushes"]
-    M --> N["CI publishes to the registry,<br>the Homebrew tap and GitHub Releases"]
+Review requires receipt/spec/work-order paths, the exact full-suite and build
+commands, and any existing probe/examples gates. Mirror the values from `config.sh`
+in the skill's Configuration section. For the router, mirror them in both workflow
+references. All seven reviewer switches default to Enabled.
+
+Release additionally requires package and release configuration. Configure those
+values before [CI setup](skills/gatekeeper/FIRST_INSTALL.md), and wire CI before the
+first release gate. Review requires neither release CI nor registry credentials.
+
+Both modes retain the committed-HEAD seal and checklist work orders with verify
+lines. Uncommitted implementation changes block the gate; Review never creates a
+commit for you. If the repo cannot provide a required gate or work order, report the
+obstacle instead of weakening the review.
+
+## The complete review flow
+
+1. Run the configured checks on a clean committed candidate and capture results.
+2. Seal that same HEAD. A changed candidate invalidates the checks and review.
+3. Grade every completed task TRUE, PARTIAL, or FALSE against the seal.
+4. Dispatch independent fresh reviewers according to switches and change risk.
+5. Verify material findings first-hand, then bring in the enabled Architect.
+6. Compute PASS, FAIL, or BLOCKED and write a receipt identifying the mode and seal.
+
+The seven mandates are Red Team, Code Reviewer, Security Reviewer, Scrutinizer,
+Repo Auditor, Ponytail Reviewer, and Architect. Risk determines which enabled
+reviewers run, exactly as in the original gate. Findings return to the implementer;
+repairs re-enter the full gate on a new seal, with at most two repair attempts.
+
+Review stops at the receipt. Release continues only within explicit user consent.
+A Review receipt never substitutes for the full Release gate and its receipt.
+Publishing mechanics are in [PUBLISHING.md](skills/gatekeeper/PUBLISHING.md).
+The bundled publisher currently targets npm-style package manifests; other release
+systems need an explicit adaptation.
+
+## Maintaining this repo
+
+The router folder owns the canonical workflows, phase files, reviewer mandates,
+resources, and publishing scripts. The two standalone skills are generated copies
+so they can be installed independently without runtime dependencies.
+
+```text
+skills/gatekeeper/           Canonical router and bundled workflow instructions
+skills/gatekeeper-review/    Generated standalone review bundle
+skills/gatekeeper-release/   Generated standalone release bundle
+scripts/sync-skills.py       Generate bundles or check for drift
+scripts/check-skills.py      Check isolated bundles, links, and config mirrors
 ```
+
+Edit canonical files, then run:
+
+```bash
+python3 scripts/sync-skills.py
+python3 scripts/sync-skills.py --check
+python3 scripts/check-skills.py
+```
+
+CI checks bundle drift, isolated file references, configuration mirrors, and the
+Agent Skills format. Shared content has one editable source. Installed skill
+copies are configured locally and must not be regenerated using this maintainer
+script. Source credits ship in [resources/README.md](skills/gatekeeper/resources/README.md).
+
+The layout follows the [Agent Skills specification](https://agentskills.io/specification)
+and the [Claude Code plugin layout](https://code.claude.com/docs/en/plugins-reference).
+
+This repo's release procedure, config values, and tag flow are in
+[RELEASE_PROCESS.md](RELEASE_PROCESS.md). A `vX.Y.Z` tag creates a GitHub Release;
+this repo does not publish an npm package.
