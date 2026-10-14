@@ -128,7 +128,7 @@ while IFS= read -r -d '' candidate; do
   [[ -f "$candidate" && ! -L "$candidate" ]] || continue
   grep -Eq '^Mode: RELEASE[[:space:]]*$' "$candidate" || continue
   grep -Eq '^Verdict: PASS[[:space:]]*$' "$candidate" || continue
-  candidate_seal=$(sed -nE 's/.*Seal: ([[:xdigit:]]{40,64}).*/\1/p' "$candidate" | head -1)
+  candidate_seal=$(sed -nE 's/.*Seal: `?([[:xdigit:]]{40,64})`?.*/\1/p' "$candidate" | head -1)
   [[ "$candidate_seal" == "$CURRENT_HEAD" ]] || continue
   RELEASE_RECEIPT="$candidate"
   receipt_matches=$((receipt_matches + 1))

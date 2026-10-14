@@ -69,7 +69,7 @@ jobs:
                   continue
               if not re.search(r"^Verdict: PASS\s*$", text, re.MULTILINE):
                   continue
-              header = re.search(r"^Branch: .* \| Seal: ([0-9a-f]{40,64}) \| Gates:", text, re.MULTILINE)
+              header = re.search(r"^Branch: .* \| Seal: `?([0-9a-f]{40,64})`? \| Gates:", text, re.MULTILINE)
               if header and header.group(1) == sealed:
                   matches.append(receipt)
 

@@ -126,7 +126,7 @@ def check_publisher_receipt_and_plugin_manifest():
         receipt = reviews / "test-gatekeeper-RELEASE.md"
         seal = run(git, "-C", str(repo), "rev-parse", "HEAD", cwd=temporary_root).stdout.strip()
         receipt.write_text(
-            f"Mode: RELEASE\nBranch: main | Seal: {seal} | Gates: test PASS\nVerdict: PASS\n",
+            f"Mode: RELEASE\nBranch: `main` | Seal: `{seal}` | Gates: test PASS\nVerdict: PASS\n",
             encoding="utf-8",
         )
 
@@ -210,7 +210,7 @@ def check_publisher_runs_both_gates_before_release():
         reviews.mkdir()
         seal = run(git, "-C", str(repo), "rev-parse", "HEAD", cwd=temporary_root).stdout.strip()
         (reviews / "test-gatekeeper-RELEASE.md").write_text(
-            f"Mode: RELEASE\nBranch: main | Seal: {seal} | Gates: PASS\nVerdict: PASS\n",
+            f"Mode: RELEASE\nBranch: `main` | Seal: `{seal}` | Gates: PASS\nVerdict: PASS\n",
             encoding="utf-8",
         )
 
