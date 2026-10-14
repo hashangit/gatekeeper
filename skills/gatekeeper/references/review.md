@@ -28,14 +28,14 @@ The skill adapts to any repo through these variables. **Set each value twice**: 
 
 Paths:
 
-- `REVIEW_FOLDER_PATH` (the folder where gate review receipts are written) = `<set-me>`
-- `IMPLEMENTATION_SPEC_PATH` (the folder where the implementation spec and planning documentation are) = `<set-me>`
-- `WORK_ORDER_PATH` (where work orders live or are created; may contain `<spec>`/`<work-order>` placeholders) = `<set-me>`
+- `REVIEW_FOLDER_PATH` (the folder where gate review receipts are written) = `Reviews`
+- `IMPLEMENTATION_SPEC_PATH` (the folder where the implementation spec and planning documentation are) = `specs`
+- `WORK_ORDER_PATH` (where work orders live or are created; may contain `<spec>`/`<work-order>` placeholders) = `work-orders/<work-order>/tasks.md`
 
 Gates:
 
-- `GATE_TEST_CMD` (the full test gate) = `<set-me>`
-- `GATE_BUILD_CMD` (the build gate) = `<set-me>`
+- `GATE_TEST_CMD` (the full test gate) = `python3 scripts/check-release-safety.py && python3 scripts/check-skills.py && skills-ref validate skills/gatekeeper && skills-ref validate skills/gatekeeper-review && skills-ref validate skills/gatekeeper-release`
+- `GATE_BUILD_CMD` (the build gate) = `python3 scripts/sync-skills.py --check`
 - `GATE_PROBES_CMD` (optional probe/deep-check gate) = ``
 - `GATE_EXAMPLES_CMD` (optional examples/docs gate) = ``
 

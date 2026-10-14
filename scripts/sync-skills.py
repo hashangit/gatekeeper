@@ -17,10 +17,16 @@ DESCRIPTIONS = {
 
 
 def files_under(path):
+    if path.is_symlink():
+        raise ValueError(f"refusing symlink in skill source: {path}")
     if path.is_file():
         yield path
     else:
-        yield from sorted(p for p in path.rglob("*") if p.is_file())
+        for child in sorted(path.rglob("*")):
+            if child.is_symlink():
+                raise ValueError(f"refusing symlink in skill source: {child}")
+            if child.is_file():
+                yield child
 
 
 def expected_files(mode):

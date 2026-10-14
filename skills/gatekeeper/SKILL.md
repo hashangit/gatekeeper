@@ -37,3 +37,18 @@ do not grade your own implementation.
 Configuration is in `config.sh`, mirrored in the workflow references. For setup,
 read [references/setup.md](references/setup.md). Unresolved required values block
 the applicable workflow, but release configuration never blocks Review.
+
+## Configuration
+
+- `REVIEW_FOLDER_PATH` (the folder where gate review receipts are written) = `Reviews`
+- `IMPLEMENTATION_SPEC_PATH` (the folder where the implementation spec and planning documentation are) = `specs`
+- `WORK_ORDER_PATH` (where work orders live or are created; may contain `<spec>`/`<work-order>` placeholders) = `work-orders/<work-order>/tasks.md`
+- `PACKAGE_NAME` (the package this skill releases) = `gatekeeper`
+- `CORE_PACKAGE_NAME` (optional second package released in lockstep) = ``
+- `GATE_TEST_CMD` (the full test gate) = `python3 scripts/check-release-safety.py && python3 scripts/check-skills.py && skills-ref validate skills/gatekeeper && skills-ref validate skills/gatekeeper-review && skills-ref validate skills/gatekeeper-release`
+- `GATE_BUILD_CMD` (the build gate) = `python3 scripts/sync-skills.py --check`
+- `GATE_PROBES_CMD` (optional probe/deep-check gate) = ``
+- `GATE_EXAMPLES_CMD` (optional examples/docs gate) = ``
+- `RELEASE_CI_WORKFLOW` (tag-triggered workflow under `.github/workflows/`) = `release.yml`
+- `RELEASE_NOTES_CMD` (optional custom notes generator) = ``
+- `HOMEBREW_TAP_REPO` (optional Homebrew tap as `owner/repo`) = ``

@@ -6,21 +6,21 @@
 
 # --- paths ------------------------------------------------------------------
 # Folder where gate review receipts are written.
-REVIEW_FOLDER_PATH="<set-me>"
+REVIEW_FOLDER_PATH="Reviews"
 # Folder where the implementation specs and planning documentation live.
-IMPLEMENTATION_SPEC_PATH="<set-me>"
+IMPLEMENTATION_SPEC_PATH="specs"
 # Where work orders live or are created, e.g.
 # "$IMPLEMENTATION_SPEC_PATH/<spec>/<work-order>/tasks.md".
-WORK_ORDER_PATH="<set-me>"
+WORK_ORDER_PATH="work-orders/<work-order>/tasks.md"
 
 # --- package & gates --------------------------------------------------------
 # The package this skill releases (its name in the manifest / registry).
-PACKAGE_NAME="<set-me>"
+PACKAGE_NAME="gatekeeper"
 # Optional second package released in lockstep (core + root monorepo split).
 CORE_PACKAGE_NAME=""
 # Phase 0 deterministic gates — run verbatim by both modes and by publish.sh.
-GATE_TEST_CMD="<set-me>"
-GATE_BUILD_CMD="<set-me>"
+GATE_TEST_CMD="python3 scripts/check-release-safety.py && python3 scripts/check-skills.py && skills-ref validate skills/gatekeeper && skills-ref validate skills/gatekeeper-review && skills-ref validate skills/gatekeeper-release"
+GATE_BUILD_CMD="python3 scripts/sync-skills.py --check"
 GATE_PROBES_CMD=""
 GATE_EXAMPLES_CMD=""
 

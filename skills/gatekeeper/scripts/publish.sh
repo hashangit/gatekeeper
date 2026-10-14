@@ -2,8 +2,8 @@
 # Publish: lockstep version bump (optional core package), tag, and push to trigger
 # the tag-triggered release workflow (RELEASE_CI_WORKFLOW).
 #
-# The workflow then publishes to your registry, optionally your Homebrew tap
-# (HOMEBREW_TAP_REPO), and creates a GitHub Release. See PUBLISHING.md for practice.
+# The workflow can publish configured registries or taps and create a GitHub
+# Release. See PUBLISHING.md for practice.
 #
 # Agents: invoke only after RELEASE PASS and explicit user consent covering
 # version bumps, commits, tags, pushes, and publishing for the target. Never infer
@@ -17,7 +17,7 @@
 #   ./publish.sh 1.2.3            # explicit version
 #   ./publish.sh patch --dry-run  # show what would happen, change nothing
 #
-# Requires: git, gh (authenticated), npm (for registry checks), jq
+# Requires: git, gh (authenticated), jq; npm is needed for registry packages.
 set -euo pipefail
 
 # --- color helpers --------------------------------------------------------
@@ -27,7 +27,6 @@ if [[ -t 1 ]]; then
 else
   BOLD=""; RED=""; GREEN=""; YELLOW=""; CYAN=""; DIM=""; RESET=""
 fi
-
 info()  { printf "${CYAN}ℹ${RESET}  %s\n" "$*"; }
 ok()    { printf "${GREEN}✓${RESET}  %s\n" "$*"; }
 warn()  { printf "${YELLOW}⚠${RESET}  %s\n" "$*"; }
@@ -44,6 +43,7 @@ if [[ -z "$REPO_ROOT" ]]; then
   REPO_ROOT="$(git -C "$SKILL_DIR" rev-parse --show-toplevel 2>/dev/null || true)"
 fi
 [[ -n "$REPO_ROOT" ]] || die "Not inside a git repository. Run publish.sh from the repo root (or install the skill inside the repo)."
+REPO_ROOT=$(cd "$REPO_ROOT" && pwd -P)
 # shellcheck source=../config.sh
 source "$SKILL_DIR/config.sh"
 cd "$REPO_ROOT"
@@ -61,24 +61,42 @@ require_var REVIEW_FOLDER_PATH
 CORE="${CORE_PACKAGE_NAME:-}"
 
 # --- preflight checks -----------------------------------------------------
-[[ -f package.json ]] || die "Not in the release repo root: no package.json at $REPO_ROOT"
-
 command -v git >/dev/null || die "git is required"
 command -v gh  >/dev/null || die "gh CLI is required (https://cli.github.com)"
 command -v jq  >/dev/null || die "jq is required"
 gh auth status >/dev/null 2>&1 || die "gh CLI is not authenticated. Run: gh auth login"
 
-PKG_NAME=$(jq -r .name package.json)
-[[ "$PKG_NAME" == "$PACKAGE_NAME" ]] || die "config.sh PACKAGE_NAME ('$PACKAGE_NAME') does not match package.json ('$PKG_NAME'). Re-align them."
+PACKAGE_KIND=""
+PACKAGE_MANIFEST=""
+if [[ -f package.json ]]; then
+  PACKAGE_KIND="npm"
+  PACKAGE_MANIFEST="package.json"
+elif [[ -f .claude-plugin/plugin.json ]]; then
+  PACKAGE_KIND="claude-plugin"
+  PACKAGE_MANIFEST=".claude-plugin/plugin.json"
+else
+  die "No supported package manifest found (expected package.json or .claude-plugin/plugin.json)."
+fi
 
-CURRENT_VERSION=$(jq -r .version package.json)
+PKG_NAME=$(jq -r .name "$PACKAGE_MANIFEST")
+[[ "$PKG_NAME" == "$PACKAGE_NAME" ]] || die "config.sh PACKAGE_NAME ('$PACKAGE_NAME') does not match $PACKAGE_MANIFEST name ('$PKG_NAME'). Re-align them."
+
+CURRENT_VERSION=$(jq -r .version "$PACKAGE_MANIFEST")
 if [[ -n "$CORE" ]]; then
+  [[ "$PACKAGE_KIND" == "npm" ]] || die "CORE_PACKAGE_NAME is supported only for npm package releases."
   CORE_VERSION=$(jq -r .version "$CORE/package.json")
   [[ "$CURRENT_VERSION" == "$CORE_VERSION" ]] || die "Manifests drifted out of lockstep: root=$CURRENT_VERSION core=$CORE_VERSION. Re-align them first (lockstep releases)."
 fi
+if [[ "$PACKAGE_KIND" == "npm" ]]; then
+  command -v npm >/dev/null || die "npm is required for registry package releases"
+fi
 DEFAULT_BRANCH="main"
 
-info "Repo:        $(git remote get-url origin 2>/dev/null || echo "(no origin remote)")"
+if git remote get-url origin >/dev/null 2>&1; then
+  info "Origin:      configured"
+else
+  info "Origin:      not configured"
+fi
 if [[ -n "$CORE" ]]; then
   info "Packages:    $PKG_NAME + $CORE (lockstep)"
 else
@@ -95,12 +113,45 @@ if [[ "$CURRENT_BRANCH" != "$DEFAULT_BRANCH" ]]; then
        Merge your feature branch first: git checkout $DEFAULT_BRANCH && git merge $CURRENT_BRANCH"
 fi
 
-# --- guard 2: working tree must be clean ----------------------------------
-if [[ -n "$(git status --porcelain)" ]]; then
-  die "Working tree is dirty. Commit or stash changes first:
-       git status
-       git stash   # or git commit -am '...'"
+# --- guard 2: require the current RELEASE PASS receipt --------------------
+CURRENT_HEAD=$(git rev-parse HEAD)
+if [[ "$REVIEW_FOLDER_PATH" = /* ]]; then
+  REVIEW_DIR_INPUT="$REVIEW_FOLDER_PATH"
+else
+  REVIEW_DIR_INPUT="$REPO_ROOT/$REVIEW_FOLDER_PATH"
 fi
+[[ -d "$REVIEW_DIR_INPUT" ]] || die "Review receipt folder does not exist: $REVIEW_FOLDER_PATH"
+REVIEW_DIR=$(cd "$REVIEW_DIR_INPUT" && pwd -P)
+RELEASE_RECEIPT=""
+receipt_matches=0
+while IFS= read -r -d '' candidate; do
+  [[ -f "$candidate" && ! -L "$candidate" ]] || continue
+  grep -Eq '^Mode: RELEASE[[:space:]]*$' "$candidate" || continue
+  grep -Eq '^Verdict: PASS[[:space:]]*$' "$candidate" || continue
+  candidate_seal=$(sed -nE 's/.*Seal: ([[:xdigit:]]{40,64}).*/\1/p' "$candidate" | head -1)
+  [[ "$candidate_seal" == "$CURRENT_HEAD" ]] || continue
+  RELEASE_RECEIPT="$candidate"
+  receipt_matches=$((receipt_matches + 1))
+done < <(find "$REVIEW_DIR" -type f -name '*-gatekeeper-RELEASE.md' -print0)
+[[ "$receipt_matches" -eq 1 ]] || die "Expected exactly one RELEASE PASS receipt sealed to $CURRENT_HEAD in $REVIEW_DIR; found $receipt_matches. Run Gatekeeper Release first."
+
+RELEASE_RECEIPT_REL=""
+case "$REVIEW_DIR/" in
+  "$REPO_ROOT/"*) RELEASE_RECEIPT_REL="${RELEASE_RECEIPT#"$REPO_ROOT/"}" ;;
+esac
+
+check_only_receipt_change() {
+  local entry status path
+  while IFS= read -r -d '' entry; do
+    status="${entry:0:2}"
+    path="${entry:3}"
+    if [[ -n "$RELEASE_RECEIPT_REL" && "$status" == "??" && "$path" == "$RELEASE_RECEIPT_REL" ]]; then
+      continue
+    fi
+    die "Working tree has changes beyond the current RELEASE receipt. Commit or remove them before releasing: $path"
+  done < <(git status --porcelain=v1 --untracked-files=all -z)
+}
+check_only_receipt_change
 
 # --- guard 3: local default branch must match origin ----------------------
 git fetch origin "$DEFAULT_BRANCH" --quiet
@@ -112,34 +163,43 @@ if [[ "$LOCAL_MAIN" != "$REMOTE_MAIN" ]]; then
 fi
 
 # --- guard 4: previous release completed ----------------------------------
-# A package ABSENT from the registry with a free tag is "ready", not half-finished
-# (first-release bootstrap). A half-finished state is diagnosed by NAME.
-registry_latest() {
-  npm view "$1" version 2>/dev/null || echo ""
-}
-NPM_LATEST=$(registry_latest "$PKG_NAME")
-if [[ -z "$NPM_LATEST" ]]; then
-  die "Could not reach npm registry for $PKG_NAME. Check network/VPN."
-fi
-if [[ "$CURRENT_VERSION" != "$NPM_LATEST" ]]; then
-  die "Version mismatch ($PKG_NAME): package.json=$CURRENT_VERSION but registry latest=$NPM_LATEST.
-       The previous release did not complete for this package. Either:
-         - publish $CURRENT_VERSION manually, OR
-         - the publish step in the last release workflow failed (re-run the job on the tag)."
-fi
-if [[ -n "$CORE" ]]; then
-  CORE_LATEST=$(registry_latest "$CORE")
-  if [[ -n "$CORE_LATEST" && "$CORE_VERSION" != "$CORE_LATEST" ]]; then
-    die "Version mismatch ($CORE): $CORE/package.json=$CORE_VERSION but registry latest=$CORE_LATEST.
-         Re-run the release workflow job on the existing tag (skip-if-exists heals the half state)."
+if [[ "$PACKAGE_KIND" == "npm" ]]; then
+  registry_latest() {
+    npm view "$1" version 2>/dev/null || echo ""
+  }
+  NPM_LATEST=$(registry_latest "$PKG_NAME")
+  if [[ -z "$NPM_LATEST" ]]; then
+    die "Could not reach npm registry for $PKG_NAME. Check network/VPN."
   fi
-  if [[ -z "$CORE_LATEST" ]]; then
-    warn "$CORE is not on the registry yet — first release (bootstrap: absent + free tag = ready)"
+  if [[ "$CURRENT_VERSION" != "$NPM_LATEST" ]]; then
+    die "Version mismatch ($PKG_NAME): package.json=$CURRENT_VERSION but registry latest=$NPM_LATEST. The previous release did not complete."
+  fi
+  if [[ -n "$CORE" ]]; then
+    CORE_LATEST=$(registry_latest "$CORE")
+    if [[ -n "$CORE_LATEST" && "$CORE_VERSION" != "$CORE_LATEST" ]]; then
+      die "Version mismatch ($CORE): $CORE/package.json=$CORE_VERSION but registry latest=$CORE_LATEST."
+    fi
+    if [[ -z "$CORE_LATEST" ]]; then
+      warn "$CORE is not on the registry yet — first release (bootstrap: absent + free tag = ready)"
+    else
+      ok "Local $CURRENT_VERSION matches registry latest for both packages (root $NPM_LATEST, core $CORE_LATEST)"
+    fi
   else
-    ok "Local $CURRENT_VERSION matches registry latest for both packages (root $NPM_LATEST, core $CORE_LATEST)"
+    ok "Local $CURRENT_VERSION matches registry latest ($NPM_LATEST)"
   fi
 else
-  ok "Local $CURRENT_VERSION matches registry latest ($NPM_LATEST)"
+  CURRENT_TAG="v$CURRENT_VERSION"
+  if git rev-parse -q --verify "refs/tags/$CURRENT_TAG" >/dev/null; then
+    gh release view "$CURRENT_TAG" >/dev/null 2>&1 || die "Tag $CURRENT_TAG exists without a GitHub Release. Repair that release before cutting another version."
+    ok "Previous GitHub Release $CURRENT_TAG is complete"
+  else
+    warn "No previous tag for $PKG_NAME $CURRENT_VERSION — treating this as the first release."
+  fi
+fi
+
+# --- guard 5: receipt is the only allowed post-seal change ----------------
+if [[ "$(git rev-parse HEAD)" != "$CURRENT_HEAD" ]]; then
+  die "HEAD changed after the RELEASE receipt was sealed. Restart the Release gate."
 fi
 
 # --- resolve target version ------------------------------------------------
@@ -187,10 +247,10 @@ fi
 if git rev-parse -q --verify "refs/tags/v$TARGET_VERSION" >/dev/null; then
   die "Tag v$TARGET_VERSION already exists. Pick a higher version."
 fi
-if npm view "$PKG_NAME@$TARGET_VERSION" version >/dev/null 2>&1; then
+if [[ "$PACKAGE_KIND" == "npm" ]] && npm view "$PKG_NAME@$TARGET_VERSION" version >/dev/null 2>&1; then
   die "$PKG_NAME@$TARGET_VERSION already exists on npm. Pick a higher version."
 fi
-if [[ -n "$CORE" ]] && npm view "$CORE@$TARGET_VERSION" version >/dev/null 2>&1; then
+if [[ -n "$CORE" && "$PACKAGE_KIND" == "npm" ]] && npm view "$CORE@$TARGET_VERSION" version >/dev/null 2>&1; then
   die "$CORE@$TARGET_VERSION already exists on npm. Pick a higher version."
 fi
 
@@ -209,7 +269,7 @@ for arg in "$@"; do
 done
 if [[ "$DRY_RUN" == true ]]; then
   info "${BOLD}--dry-run${RESET}: no changes made (manifests byte-identical)."
-  info "Would have: bumped package.json$( [[ -n "$CORE" ]] && echo " + $CORE/package.json" ) to $TARGET_VERSION, committed, tagged v$TARGET_VERSION, pushed."
+  info "Would have: bumped $PACKAGE_MANIFEST$( [[ -n "$CORE" ]] && echo " + $CORE/package.json" ) to $TARGET_VERSION, committed, tagged v$TARGET_VERSION, pushed."
   exit 0
 fi
 
@@ -217,70 +277,102 @@ fi
 read -r -p "Publish $TARGET_VERSION? [y/N] " confirm </dev/tty
 [[ "$confirm" =~ ^[Yy]$ ]] || die "Aborted."
 
-# --- run the test gate -----------------------------------------------------
+# --- run all configured gates before mutation -----------------------------
+GATE_LOG=$(mktemp "${TMPDIR:-/tmp}/gatekeeper-gates.XXXXXX") || die "Could not create a private gate log."
+trap 'rm -f "$GATE_LOG"' EXIT
 info "Running the test gate ($GATE_TEST_CMD)..."
-if ! bash -c "$GATE_TEST_CMD" >/tmp/gatekeeper-test.log 2>&1; then
-  err "Test gate failed. See /tmp/gatekeeper-test.log"
-  tail -20 /tmp/gatekeeper-test.log
+if ! bash -c "$GATE_TEST_CMD" >"$GATE_LOG" 2>&1; then
+  err "Test gate failed. Output is in $GATE_LOG"
+  tail -20 "$GATE_LOG"
   die "Aborting release."
 fi
 ok "Test gate passed"
-
-# --- execute: bump manifests, generate notes, commit, tag, push -----------
-MANIFESTS="package.json"
-info "Bumping package.json to $TARGET_VERSION..."
-npm version "$TARGET_VERSION" --no-git-tag-version --silent >/dev/null
-if [[ -n "$CORE" ]]; then
-  info "Bumping $CORE/package.json to $TARGET_VERSION (lockstep)..."
-  (cd "$CORE" && npm version "$TARGET_VERSION" --no-git-tag-version --silent >/dev/null)
-  MANIFESTS="$MANIFESTS $CORE/package.json"
+info "Running the build gate ($GATE_BUILD_CMD)..."
+if ! bash -c "$GATE_BUILD_CMD" >>"$GATE_LOG" 2>&1; then
+  err "Build gate failed. Output is in $GATE_LOG"
+  tail -20 "$GATE_LOG"
+  die "Aborting release."
 fi
+ok "Build gate passed"
+check_only_receipt_change
+[[ "$(git rev-parse HEAD)" == "$CURRENT_HEAD" ]] || die "HEAD changed while the gates ran. Restart the Release gate."
 
-# --- generate release notes ------------------------------------------------
+# --- generate notes before changing the manifest --------------------------
 NOTES_FILE="RELEASE_NOTES-v$TARGET_VERSION.md"
+[[ ! -e "$NOTES_FILE" && ! -L "$NOTES_FILE" ]] || die "$NOTES_FILE already exists; inspect it before continuing."
 info "Generating release notes..."
 NOTES_OK=false
 if [[ -n "${RELEASE_NOTES_CMD:-}" ]]; then
-  if bash -c "$RELEASE_NOTES_CMD" "$TARGET_VERSION"; then NOTES_OK=true; fi
+  if bash -c "$RELEASE_NOTES_CMD" _ "$TARGET_VERSION"; then NOTES_OK=true; fi
 elif command -v node >/dev/null; then
   if node "$SKILL_DIR/scripts/generate-release-notes.mjs" "$TARGET_VERSION"; then NOTES_OK=true; fi
-else
-  warn "node not found — cannot run the bundled notes generator."
 fi
-if [[ "$NOTES_OK" == true && -f "$NOTES_FILE" ]]; then
-  ok "Generated $NOTES_FILE"
-  echo
-  echo "${DIM}--- preview ---${RESET}"
-  head -20 "$NOTES_FILE" | sed 's/^/  /'
-  echo "${DIM}--- end preview ---${RESET}"
-  echo
-  read -r -p "Edit $NOTES_FILE before publishing? [y/N] " edit_notes </dev/tty
-  if [[ "$edit_notes" =~ ^[Yy]$ ]]; then
-    ${EDITOR:-vi} "$NOTES_FILE"
+if [[ "$NOTES_OK" != true || ! -s "$NOTES_FILE" ]]; then
+  die "Release notes were not generated at $NOTES_FILE; no manifest change, release commit, or tag was created."
+fi
+ok "Generated $NOTES_FILE"
+echo
+echo "${DIM}--- preview ---${RESET}"
+head -20 "$NOTES_FILE" | sed 's/^/  /'
+echo "${DIM}--- end preview ---${RESET}"
+echo
+read -r -p "Edit $NOTES_FILE before publishing? [y/N] " edit_notes </dev/tty
+if [[ "$edit_notes" =~ ^[Yy]$ ]]; then
+  ${EDITOR:-vi} "$NOTES_FILE"
+fi
+
+# --- bump manifest, commit, tag, and push ---------------------------------
+MANIFESTS=("$PACKAGE_MANIFEST")
+info "Bumping $PACKAGE_MANIFEST to $TARGET_VERSION..."
+if [[ "$PACKAGE_KIND" == "npm" ]]; then
+  npm version "$TARGET_VERSION" --no-git-tag-version --silent >/dev/null
+  if [[ -n "$CORE" ]]; then
+    info "Bumping $CORE/package.json to $TARGET_VERSION (lockstep)..."
+    (cd "$CORE" && npm version "$TARGET_VERSION" --no-git-tag-version --silent >/dev/null)
+    MANIFESTS+=("$CORE/package.json")
   fi
 else
-  warn "Release notes not generated. The GitHub Release will use notes from CHANGELOG.md or auto-generated ones."
+  manifest_tmp=$(mktemp "${PACKAGE_MANIFEST}.XXXXXX") || die "Could not create a temporary plugin manifest."
+  cp -p "$PACKAGE_MANIFEST" "$manifest_tmp"
+  if ! jq --arg version "$TARGET_VERSION" '.version = $version' "$PACKAGE_MANIFEST" >"$manifest_tmp"; then
+    rm -f "$manifest_tmp"
+    die "Could not update $PACKAGE_MANIFEST"
+  fi
+  mv "$manifest_tmp" "$PACKAGE_MANIFEST"
 fi
 
 info "Committing..."
-git add $MANIFESTS
-[[ -f "$NOTES_FILE" ]] && git add "$NOTES_FILE"
+git add -- "${MANIFESTS[@]}"
+if [[ -n "$RELEASE_RECEIPT_REL" ]]; then
+  git add -f -- "$RELEASE_RECEIPT_REL"
+fi
+git add -- "$NOTES_FILE"
 git commit -m "chore(release): v$TARGET_VERSION" --quiet
 
 info "Tagging v$TARGET_VERSION..."
-git tag "v$TARGET_VERSION"
+git tag -a "v$TARGET_VERSION" -m "Release v$TARGET_VERSION"
+RELEASE_COMMIT=$(git rev-parse HEAD)
 
 info "Pushing commit + tag to origin..."
 git push origin "$DEFAULT_BRANCH" --quiet
 git push origin "v$TARGET_VERSION" --quiet
 ok "Pushed. CI ($RELEASE_CI_WORKFLOW) will now publish."
 
-# --- watch the workflow ----------------------------------------------------
+# --- watch the workflow run for this exact commit -------------------------
 echo
-info "Watching $RELEASE_CI_WORKFLOW (Ctrl-C to stop watching; the release continues)..."
-sleep 3  # let the workflow register
-if gh run list --workflow="$RELEASE_CI_WORKFLOW" --limit=1 --json databaseId,status -q '.[0].databaseId' \
-    | xargs -I{} gh run watch {} --exit-status; then
+info "Waiting for $RELEASE_CI_WORKFLOW on $RELEASE_COMMIT..."
+RUN_ID=""
+for attempt in {1..15}; do
+  RUN_ID=$(gh run list --workflow="$RELEASE_CI_WORKFLOW" --commit="$RELEASE_COMMIT" --limit=20 --json databaseId,headSha \
+    | jq -r --arg sha "$RELEASE_COMMIT" '[.[] | select(.headSha == $sha)] | first | .databaseId // empty')
+  [[ -n "$RUN_ID" ]] && break
+  sleep 2
+done
+if [[ -z "$RUN_ID" ]]; then
+  err "Could not find a $RELEASE_CI_WORKFLOW run for pushed commit $RELEASE_COMMIT. The tag is already pushed; inspect Actions before retrying."
+  exit 1
+fi
+if gh run watch "$RUN_ID" --exit-status; then
   ok "${BOLD}Release workflow succeeded.${RESET}"
   echo
   echo "  ${DIM}release:${RESET}  $(gh repo view --json url -q .url)/releases/tag/v$TARGET_VERSION"
@@ -289,10 +381,7 @@ if gh run list --workflow="$RELEASE_CI_WORKFLOW" --limit=1 --json databaseId,sta
   fi
   exit 0
 else
-  err "${BOLD}Release workflow FAILED.${RESET} Investigate:"
-  echo "  gh run list --workflow=$RELEASE_CI_WORKFLOW --limit=1"
-  echo
-  echo "  ${DIM}Note:${RESET} re-run the failed job on the EXISTING tag (skip-if-exists heals"
-  echo "  the half state). Do NOT re-run this script — it bumps a new version."
+  err "${BOLD}Release workflow FAILED.${RESET} Investigate run $RUN_ID: gh run view $RUN_ID"
+  echo "  Re-run the failed job on the EXISTING tag. Do NOT re-run this script; it bumps a new version."
   exit 1
 fi

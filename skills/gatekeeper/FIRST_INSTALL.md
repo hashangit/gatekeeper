@@ -17,33 +17,29 @@ The release flow is a two-stage relay:
 1. **Local** — the gate reviews, then `scripts/publish.sh` bumps the version, tags,
    and pushes.
 2. **CI (GitHub Actions)** — the tag triggers `RELEASE_CI_WORKFLOW` (default
-   `release.yml`), which builds and publishes: your package registry, optionally the
-   Homebrew tap, and a GitHub Release.
+   `release.yml`), which validates the tagged source and creates a GitHub Release.
+   Add registry or Homebrew publishing jobs only if the target repo needs them.
 
-Publishing lives on CI, not your laptop, for three reasons: the registry token stays
-in GitHub secrets, packages get signed provenance (requires a CI OIDC token), and the
-exact sealed commit is what gets built.
+The write-enabled job only creates the GitHub Release after a read-only validation
+job passes. Put any registry or tap credentials in narrowly scoped CI secrets.
 
 ## Setup steps
 
-1. **Copy the workflow.** Copy `.github/workflows/release.yml` (from the repo you
-   took this skill from if it provides one; otherwise write one for the target repo) into the target repo at the same path. Adapt:
-   - Package name(s) in the publish job(s) — `PACKAGE_NAME` (and `CORE_PACKAGE_NAME`
-     if lockstep; delete the core-first job if single-package).
-   - Any build jobs you don't need (e.g. a native/Rust helper job — delete it and
-     remove it from the publish job's `needs:`).
-   - The Homebrew tap job — keep only if `HOMEBREW_TAP_REPO` is set.
-2. **Add the registry secret.** Repo Settings → Secrets and variables → Actions → new
-   repository secret `NPM_TOKEN`. Use an automation or granular token with publish
-   rights for your package, nothing broader. Keeping the tap job? Add
-   `HOMEBREW_TAP_TOKEN` too (write access to the tap repo, nothing more).
+1. **Copy and adapt the workflow.** Copy `.github/workflows/release.yml` into the
+   target repo. It is a minimal GitHub Release pipeline with read-only validation
+   followed by a write-enabled release job. Add registry or tap publishing jobs only
+   when the target repo needs them, and grant those jobs only the permissions and
+   secrets they require.
+2. **Add secrets only for configured publishing jobs.** The GitHub Release job uses
+   the built-in `GITHUB_TOKEN`. A separate npm publishing job needs `NPM_TOKEN`; a
+   Homebrew tap job needs `HOMEBREW_TAP_TOKEN`.
 3. **Check the local toolchain** (whatever machine runs the gate and `publish.sh`):
-   `git`, `gh` (authenticated — `gh auth login`), `jq`, `npm`, and whatever your
-   gate commands need.
-4. **Check publisher compatibility.** This distribution has no release workflow
-   template or npm manifest of its own. The bundled publisher requires an existing
-   root package on npm; it does not bootstrap an unpublished root package. Adapt
-   the publisher and CI to the target repo before using them. Report unsupported
+   Python 3.11+, `git`, `gh` (authenticated — `gh auth login`), `jq`, `node`, and
+   whatever the configured gate commands need. `npm` is required only for npm
+   packages.
+4. **Check publisher compatibility.** The bundled publisher supports npm
+   `package.json` manifests and Claude Code plugin `.claude-plugin/plugin.json`
+   manifests. Adapt it for other package types before use; report unsupported
    release plumbing rather than bypassing the guards.
 5. **Dry run, then cut:**
    ```bash

@@ -26,15 +26,18 @@ type(scope): summary (work-order-tag)
 - **Work-order tag**: end the summary with the work order in parens — `(042 review)`.
   Anyone reading the log should trace a commit to its work order.
 - **The release commit** is made by `publish.sh`: `chore(release): vX.Y.Z`, containing
-  the manifest bumps and the drafted release notes. Never hand-roll it.
-- **No push without a receipt.** The gate's PASS receipt precedes the release commit;
-  that prerequisite lives in the Release workflow; it is not release consent.
+  the manifest bump, release notes, and the PASS Release receipt. Never hand-roll it.
+- **No push without a receipt.** The publisher requires one PASS receipt sealed to
+  the current HEAD and reruns both configured gates before it mutates the release.
+  The receipt is not release consent.
 
 ## Versioning
 
 - **Semver**, and lockstep when `CORE_PACKAGE_NAME` is set: both manifests always
-  share one version. `publish.sh` refuses to run if they drift, and bumps them
-  together (`patch` / `minor` / `major`, or an explicit `X.Y.Z`).
+  share one version. `publish.sh` supports npm `package.json` and Claude plugin
+  `.claude-plugin/plugin.json` manifests. It refuses to run if package versions
+  drift, and bumps them together (`patch` / `minor` / `major`, or an explicit
+  `X.Y.Z`).
 - **Compatibility policy**: decide it and document it (e.g. pre-1.0 = no shims,
   breaking changes land directly with migration notes; post-1.0 = deprecation
   window). The gate enforces claims, not the policy — but the release notes must
@@ -44,7 +47,8 @@ type(scope): summary (work-order-tag)
 
 ## The registry (npm or equivalent)
 
-Published by CI (the `publish-npm` job), never from a laptop:
+For repositories that configure a registry publishing job, publish from CI, never
+from a laptop:
 
 - **Order: core package first, then root** — when `CORE_PACKAGE_NAME` is set. If the
   job dies after core published, re-run the job on the same tag; skip-if-exists
@@ -67,13 +71,13 @@ No tap? Delete the job and the token.
 
 ## GitHub Release
 
-The `github-release` job picks notes by first match:
+The GitHub Release job uses the required committed notes file:
 
 1. `RELEASE_NOTES-vX.Y.Z.md` — committed by `publish.sh` (drafted by
    `RELEASE_NOTES_CMD` or the bundled `scripts/generate-release-notes.mjs`,
    human-edited if you chose to).
-2. The matching section extracted from `CHANGELOG.md`.
-3. Auto-generated from commits — the fallback, not the practice.
+The bundled publisher stops if that file was not generated. Custom
+`RELEASE_NOTES_CMD` commands receive the target version as `$1`.
 
 ## When a publish job fails
 

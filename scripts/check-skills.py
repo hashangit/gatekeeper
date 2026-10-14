@@ -25,6 +25,10 @@ def check_install(skill):
             if not target.is_relative_to(skill.resolve()) or not target.exists():
                 errors.append(f"{path.relative_to(skill)}: missing or escaping link {link}")
     config = dict(re.findall(r'^([A-Z_]+)="(.*)"$', (skill / "config.sh").read_text(), re.M))
+    if skill.name == "gatekeeper":
+        router = dict(re.findall(r"^- `([A-Z_]+)` .* = `(.*?)`$", (skill / "SKILL.md").read_text(), re.M))
+        if router != config:
+            errors.append("SKILL.md: config.sh and router Configuration disagree")
     workflows = [skill / "SKILL.md"]
     if skill.name == "gatekeeper":
         workflows = [skill / "references/review.md", skill / "references/release.md"]

@@ -34,16 +34,16 @@ The skill adapts to any repo through these variables. **Set each value twice**: 
 
 Paths:
 
-- `REVIEW_FOLDER_PATH` (the folder where gate review receipts are written) = `<set-me>`
-- `IMPLEMENTATION_SPEC_PATH` (the folder where the implementation spec and planning documentation are) = `<set-me>`
-- `WORK_ORDER_PATH` (where work orders live or are created; may contain `<spec>`/`<work-order>` placeholders) = `<set-me>`
+- `REVIEW_FOLDER_PATH` (the folder where gate review receipts are written) = `Reviews`
+- `IMPLEMENTATION_SPEC_PATH` (the folder where the implementation spec and planning documentation are) = `specs`
+- `WORK_ORDER_PATH` (where work orders live or are created; may contain `<spec>`/`<work-order>` placeholders) = `work-orders/<work-order>/tasks.md`
 
 Package and gates:
 
-- `PACKAGE_NAME` (the package this skill releases) = `<set-me>`
+- `PACKAGE_NAME` (the package this skill releases) = `gatekeeper`
 - `CORE_PACKAGE_NAME` (optional second package released in lockstep) = ``
-- `GATE_TEST_CMD` (the full test gate) = `<set-me>`
-- `GATE_BUILD_CMD` (the build gate) = `<set-me>`
+- `GATE_TEST_CMD` (the full test gate) = `python3 scripts/check-release-safety.py && python3 scripts/check-skills.py && skills-ref validate skills/gatekeeper && skills-ref validate skills/gatekeeper-review && skills-ref validate skills/gatekeeper-release`
+- `GATE_BUILD_CMD` (the build gate) = `python3 scripts/sync-skills.py --check`
 - `GATE_PROBES_CMD` (optional probe/deep-check gate) = ``
 - `GATE_EXAMPLES_CMD` (optional examples/docs gate) = ``
 
@@ -115,7 +115,7 @@ One bounded loop: findings go back for repair, repairs re-enter the FULL gate on
 
 ## Scripts
 
-The cut itself lives here too. After a PASS verdict and explicit user consent for the release operations: `scripts/publish.sh` (this folder) — guards the tree, runs `GATE_TEST_CMD`, bumps the version (plus `CORE_PACKAGE_NAME` in lockstep if set), drafts notes via `RELEASE_NOTES_CMD` or the bundled `scripts/generate-release-notes.mjs`, tags, pushes, and watches `RELEASE_CI_WORKFLOW` publish. Try `publish.sh patch --dry-run` first. A dry run does not authorize the real cut.
+The cut itself lives here too. After a PASS verdict and explicit user consent for the release operations: `scripts/publish.sh` (this folder) requires exactly one PASS receipt sealed to the current HEAD, guards the tree, runs both configured gates, bumps the package manifest, drafts notes via `RELEASE_NOTES_CMD` or the bundled `scripts/generate-release-notes.mjs`, tags, pushes, and watches the workflow run for that commit. It supports npm packages and Claude Code plugin manifests. Try `publish.sh patch --dry-run` first. A dry run does not authorize the real cut.
 
 Commit, versioning, and publishing practice — conventional-commit format, lockstep semver, registry ordering, tap mechanics, failure recovery — is documented in [PUBLISHING.md](PUBLISHING.md). Read it before your first cut.
 

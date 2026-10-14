@@ -11,13 +11,11 @@
  *
  * Set RELEASE_NOTES_CMD in config.sh to override this with your own generator.
  */
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = execSync("git rev-parse --show-toplevel", { cwd: __dirname, encoding: "utf8" }).trim();
+const REPO_ROOT = execFileSync("git", ["rev-parse", "--show-toplevel"], { cwd: process.cwd(), encoding: "utf8" }).trim();
 
 const VERSION = process.argv[2];
 const STDOUT_ONLY = process.argv.includes("--stdout");
@@ -28,19 +26,24 @@ if (!VERSION || !/^\d+\.\d+\.\d+$/.test(VERSION)) {
   process.exit(1);
 }
 
-function run(cmd) {
-  return execSync(cmd, { cwd: REPO_ROOT, encoding: "utf8" }).trim();
+function runGit(args) {
+  return execFileSync("git", args, { cwd: REPO_ROOT, encoding: "utf8" }).trim();
 }
 
 // Previous tag; fall back to the first commit on a fresh repo.
 let prevTag;
 try {
-  prevTag = run("git describe --tags --abbrev=0 HEAD~1 2>/dev/null || git describe --tags --abbrev=0 2>/dev/null");
+  prevTag = runGit(["describe", "--tags", "--abbrev=0", "HEAD~1"]);
 } catch {
-  prevTag = run("git rev-list --max-parents=0 HEAD");
+  try {
+    prevTag = runGit(["describe", "--tags", "--abbrev=0"]);
+  } catch {
+    prevTag = runGit(["rev-list", "--max-parents=0", "HEAD"]);
+  }
 }
 
-const log = run(`git log ${prevTag}..HEAD --no-merges --pretty=format:"%s"`)
+// Keep the tag as a single argv value; tags are repository data, never shell code.
+const log = runGit(["log", `${prevTag}..HEAD`, "--no-merges", "--pretty=format:%s"])
   .split("\n")
   .map((s) => s.trim())
   .filter(Boolean);

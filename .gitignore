@@ -1,2 +1,3 @@
 .commandcode/
 .DS_Store
+.venv/

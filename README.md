@@ -122,10 +122,11 @@ python3 scripts/sync-skills.py --check
 python3 scripts/check-skills.py
 ```
 
-CI checks bundle drift, isolated file references, configuration mirrors, and the
-Agent Skills format. Shared content has one editable source. Installed skill
-copies are configured locally and must not be regenerated using this maintainer
-script. Source credits ship in [resources/README.md](skills/gatekeeper/resources/README.md).
+CI checks release safety, bundle drift, isolated file references, configuration
+mirrors, and the Agent Skills format. Shared content has one editable source.
+Installed skill copies are configured locally and must not be regenerated using
+this maintainer script. Source credits ship in
+[resources/README.md](skills/gatekeeper/resources/README.md).
 
 The layout follows the [Agent Skills specification](https://agentskills.io/specification)
 and the [Claude Code plugin layout](https://code.claude.com/docs/en/plugins-reference).
