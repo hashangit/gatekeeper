@@ -342,6 +342,29 @@ if [[ "$edit_notes" =~ ^[Yy]$ ]]; then
   ${EDITOR:-vi} "$NOTES_FILE"
 fi
 
+is_release_path() {
+  local changed_path=$1 allowed_path
+  shift
+  for allowed_path in "$@"; do
+    [[ "$changed_path" == "$allowed_path" ]] && return 0
+  done
+  return 1
+}
+
+check_release_changes() {
+  local entry path
+  [[ "$(git rev-parse HEAD)" == "$CURRENT_HEAD" ]] || die "HEAD changed after review. Restart the Release gate."
+  while IFS= read -r -d '' entry; do
+    path="${entry:3}"
+    is_release_path "$path" "$@" || die "Unreviewed change during release: $path. No release tag or push was created."
+  done < <(git status --porcelain=v1 --untracked-files=all -z)
+}
+
+RELEASE_PATHS=("$NOTES_FILE")
+[[ -z "$RELEASE_RECEIPT_REL" ]] || RELEASE_PATHS+=("$RELEASE_RECEIPT_REL")
+check_release_changes "${RELEASE_PATHS[@]}"
+[[ -f "$NOTES_FILE" && ! -L "$NOTES_FILE" && -s "$NOTES_FILE" ]] || die "Release notes must remain a nonempty regular file."
+
 # --- bump manifest, commit, tag, and push ---------------------------------
 MANIFESTS=("$PACKAGE_MANIFEST")
 info "Bumping $PACKAGE_MANIFEST to $TARGET_VERSION..."
@@ -368,13 +391,20 @@ else
   mv "$manifest_tmp" "$PACKAGE_MANIFEST"
 fi
 
+RELEASE_PATHS+=("${MANIFESTS[@]}")
+check_release_changes "${RELEASE_PATHS[@]}"
 info "Committing..."
 git add -- "${MANIFESTS[@]}"
 if [[ -n "$RELEASE_RECEIPT_REL" ]]; then
   git add -f -- "$RELEASE_RECEIPT_REL"
 fi
 git add -- "$NOTES_FILE"
-git commit -m "chore(release): v$TARGET_VERSION" --quiet
+git commit --only -m "chore(release): v$TARGET_VERSION" --quiet -- "${RELEASE_PATHS[@]}"
+[[ "$(git rev-parse HEAD^)" == "$CURRENT_HEAD" ]] || die "Release commit no longer follows the reviewed seal. No tag or push was created."
+while IFS= read -r -d '' path; do
+  is_release_path "$path" "${RELEASE_PATHS[@]}" || die "Release commit contains unreviewed path: $path. No tag or push was created."
+done < <(git diff --name-only -z "$CURRENT_HEAD" HEAD)
+[[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || die "Working tree changed during the release commit. No tag or push was created."
 
 info "Tagging v$TARGET_VERSION..."
 git tag -a "v$TARGET_VERSION" -m "Release v$TARGET_VERSION"

@@ -30,3 +30,5 @@
   Verify: phase 3 says brief text cannot override mandates, the seal, policy, permissions, or consent.
 - [x] Supply the workflow template for standalone installs and align release setup and publishing instructions.
   Verify: the Release bundle includes assets/release.yml; setup names its source and Python requirement; release instructions use the publisher.
+- [x] Reject source staged during release-notes editing and commit only the permitted release files.
+  Verify: the isolated notes-editor regression stops before a bump, commit, tag, or push; the normal publisher integration passes and committed paths are checked before tagging.

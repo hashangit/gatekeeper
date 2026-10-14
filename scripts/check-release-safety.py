@@ -247,7 +247,7 @@ def check_publisher_receipt_and_plugin_manifest():
             raise AssertionError(f"publisher failed to safely bump a long semver component: {long_version.stdout}{long_version.stderr}")
 
 
-def check_publisher_runs_both_gates_and_stages_npm_lockfiles():
+def check_publisher_runs_both_gates_and_stages_npm_lockfiles(stage_unreviewed=False):
     git = shutil.which("git")
     jq = shutil.which("jq")
     node = shutil.which("node")
@@ -358,12 +358,22 @@ def check_publisher_runs_both_gates_and_stages_npm_lockfiles():
         fake_npm.chmod(fake_npm.stat().st_mode | stat.S_IXUSR)
         environment = os.environ.copy()
         environment["PATH"] = f"{fake_bin}{os.pathsep}{environment['PATH']}"
+        if stage_unreviewed:
+            editor = fake_bin / "stage-unreviewed"
+            editor.write_text(
+                "#!/bin/sh\n"
+                "printf 'unreviewed source\\n' > unchecked.txt\n"
+                "git add -- unchecked.txt\n",
+                encoding="utf-8",
+            )
+            editor.chmod(editor.stat().st_mode | stat.S_IXUSR)
+            environment["EDITOR"] = str(editor)
 
         child_pid, master_fd = pty.fork()
         if child_pid == 0:
             os.chdir(repo)
             os.execvpe("bash", ["bash", str(scripts / "publish.sh"), "1.0.1"], environment)
-        os.write(master_fd, b"y\nn\n")
+        os.write(master_fd, b"y\ny\n" if stage_unreviewed else b"y\nn\n")
         output = bytearray()
         deadline = time.monotonic() + 30
         status = None
@@ -393,6 +403,17 @@ def check_publisher_runs_both_gates_and_stages_npm_lockfiles():
             output.extend(chunk)
         os.close(master_fd)
         text = output.decode(errors="replace")
+        if stage_unreviewed:
+            if os.waitstatus_to_exitcode(status) == 0 or "Unreviewed change during release: unchecked.txt" not in text:
+                raise AssertionError(f"publisher accepted source staged by the notes editor: {text}")
+            if run(git, "rev-parse", "HEAD", cwd=repo).stdout.strip() != seal:
+                raise AssertionError("publisher made a release commit after unreviewed editor staging")
+            if run(git, "rev-parse", "--verify", "refs/tags/v1.0.1", cwd=repo, check=False).returncode == 0:
+                raise AssertionError("publisher tagged an unreviewed editor change")
+            remote_head = run(git, "ls-remote", "origin", "refs/heads/main", cwd=repo).stdout.split()[0]
+            if remote_head != seal:
+                raise AssertionError("publisher pushed an unreviewed editor change")
+            return
         if os.waitstatus_to_exitcode(status) != 0:
             raise AssertionError(f"publisher flow failed: {text}")
         if gate_log.read_text(encoding="utf-8").splitlines() != ["test", "build"]:
@@ -425,6 +446,7 @@ def main():
     check_notes_generator_does_not_execute_tag()
     check_publisher_receipt_and_plugin_manifest()
     check_publisher_runs_both_gates_and_stages_npm_lockfiles()
+    check_publisher_runs_both_gates_and_stages_npm_lockfiles(stage_unreviewed=True)
     print("Release safety checks passed.")
 
 
