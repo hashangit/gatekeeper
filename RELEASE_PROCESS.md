@@ -34,8 +34,8 @@ to the release commit's parent. All seven reviewer switches are Enabled.
 Install the Agent Skills reference validator before starting a fresh gate session:
 
 ```bash
-# Use any installed Python 3.11+ interpreter (for example, python3.12).
-python3.12 -m venv .venv
+# Use Python 3.11+; replace python3 with a newer installed interpreter if needed.
+python3 -m venv .venv
 .venv/bin/python -m pip install 'git+https://github.com/agentskills/agentskills.git@69ef37e9424c0a7ea9dd2293b559e43ec8176379#subdirectory=skills-ref'
 export PATH="$PWD/.venv/bin:$PATH"
 ```
@@ -45,19 +45,27 @@ authenticated `gh` CLI.
 
 ## Release steps
 
-1. Use Gatekeeper Release on the committed candidate. Require the receipt to say
-   PASS before making the version bump or cutting a tag.
-2. Choose the semver bump based on scope. Update `.claude-plugin/plugin.json`; keep
-   its version in sync with the tag. `.claude-plugin/marketplace.json` has no version
-   field and needs no version bump.
-3. Generate and edit `RELEASE_NOTES-vX.Y.Z.md` before the release commit. Include the
-   Gatekeeper receipt with the release change.
-4. Commit the release change, create the matching annotated tag, and push the branch
-   and tag to `origin`. User consent must cover those actions and this repository.
+1. Run Gatekeeper Release on the committed candidate. Require a PASS receipt sealed
+   to that exact HEAD before any release push or version bump.
+2. If the reviewed candidate is not yet on `origin/main`, push that sealed commit
+   to `main` after the PASS. Keep the receipt uncommitted so it remains sealed to
+   the candidate; the publisher includes it in the release commit.
+3. Preview the authorized release through
+   `bash skills/gatekeeper-release/scripts/publish.sh X.Y.Z --dry-run` (replace
+   `X.Y.Z` with the chosen version). The publisher checks the receipt, current
+   remote state, and target tag before proposing changes; the real cut reruns the gates.
+4. After explicit user consent covers the version bump, release commit, tag, branch
+   and tag pushes, and GitHub Release creation, run
+   `bash skills/gatekeeper-release/scripts/publish.sh X.Y.Z`. It generates the notes,
+   bumps `.claude-plugin/plugin.json`, commits the PASS receipt and notes, creates
+   the matching annotated tag, pushes, and watches the exact workflow run.
+   `.claude-plugin/marketplace.json` has no version field.
 5. The tag triggers `.github/workflows/release.yml`. Its read-only job validates the
-   tagged tree and receipt; a separate write-enabled job creates the GitHub Release
-   from the committed notes. It uses only GitHub's built-in `GITHUB_TOKEN`.
+   tagged tree, matching receipt, and tag-to-commit identity; a separate write-enabled
+   job creates or updates the GitHub Release from committed notes using GitHub's
+   built-in `GITHUB_TOKEN`.
 
-Never treat the gate PASS as consent to bump, commit, tag, push, or publish. If the
+Never treat the gate PASS as consent to bump, commit, tag, push, or publish. The
+user's release request must cover the target and each of those actions. If the
 workflow fails, inspect and rerun the existing tag workflow; do not create another
 version to retry it.

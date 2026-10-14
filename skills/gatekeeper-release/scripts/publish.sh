@@ -82,6 +82,8 @@ PKG_NAME=$(jq -r .name "$PACKAGE_MANIFEST")
 [[ "$PKG_NAME" == "$PACKAGE_NAME" ]] || die "config.sh PACKAGE_NAME ('$PACKAGE_NAME') does not match $PACKAGE_MANIFEST name ('$PKG_NAME'). Re-align them."
 
 CURRENT_VERSION=$(jq -r .version "$PACKAGE_MANIFEST")
+SEMVER_REGEX='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+[[ "$CURRENT_VERSION" =~ $SEMVER_REGEX ]] || die "$PACKAGE_MANIFEST has an invalid semver version: '$CURRENT_VERSION'."
 if [[ -n "$CORE" ]]; then
   [[ "$PACKAGE_KIND" == "npm" ]] || die "CORE_PACKAGE_NAME is supported only for npm package releases."
   CORE_VERSION=$(jq -r .version "$CORE/package.json")
@@ -126,9 +128,10 @@ RELEASE_RECEIPT=""
 receipt_matches=0
 while IFS= read -r -d '' candidate; do
   [[ -f "$candidate" && ! -L "$candidate" ]] || continue
-  grep -Eq '^Mode: RELEASE[[:space:]]*$' "$candidate" || continue
-  grep -Eq '^Verdict: PASS[[:space:]]*$' "$candidate" || continue
-  candidate_seal=$(sed -nE 's/.*Seal: `?([[:xdigit:]]{40,64})`?.*/\1/p' "$candidate" | head -1)
+  [[ "$(grep -Ec '^Mode: RELEASE[[:space:]]*$' "$candidate" || true)" == "1" ]] || continue
+  [[ "$(grep -Ec '^Verdict: PASS[[:space:]]*$' "$candidate" || true)" == "1" ]] || continue
+  [[ "$(grep -Ec '^Branch: [^|]+ \| Seal: `?[[:xdigit:]]{40,64}`? \| Gates: .+$' "$candidate" || true)" == "1" ]] || continue
+  candidate_seal=$(sed -nE 's/^Branch: [^|]+ \| Seal: `?([[:xdigit:]]{40,64})`? \| Gates: .+$/\1/p' "$candidate" | head -1)
   [[ "$candidate_seal" == "$CURRENT_HEAD" ]] || continue
   RELEASE_RECEIPT="$candidate"
   receipt_matches=$((receipt_matches + 1))
@@ -204,31 +207,48 @@ fi
 
 # --- resolve target version ------------------------------------------------
 bump_version() {
-  # arithmetic bump — npm version MUTATES package.json, which would break
-  # dry-run purity
-  local maj=$1 min=$2 pat=$3 kind=$4
+  local version=$1 kind=$2 maj min pat
+  IFS=. read -r maj min pat <<< "$version"
   case "$kind" in
-    patch) echo "$maj.$min.$((pat+1))" ;;
-    minor) echo "$maj.$((min+1)).0" ;;
-    major) echo "$((maj+1)).0.0" ;;
+    patch) printf '%s.%s.%s\n' "$maj" "$min" "$(increment_decimal "$pat")" ;;
+    minor) printf '%s.%s.0\n' "$maj" "$(increment_decimal "$min")" ;;
+    major) printf '%s.0.0\n' "$(increment_decimal "$maj")" ;;
   esac
 }
 
-if [[ "${1:-}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+increment_decimal() {
+  local value=$1 result="" digit index carry=1
+  for ((index=${#value}-1; index>=0; index--)); do
+    digit=${value:index:1}
+    if ((carry)); then
+      if [[ "$digit" == "9" ]]; then
+        digit="0"
+      else
+        digit=$((10#$digit + 1))
+        carry=0
+      fi
+    fi
+    result="$digit$result"
+  done
+  if ((carry)); then result="1$result"; fi
+  printf '%s\n' "$result"
+}
+
+if [[ "${1:-}" =~ $SEMVER_REGEX ]]; then
   BUMP="$1"; TARGET_VERSION="$BUMP"
 elif [[ "${1:-}" == "patch" || "${1:-}" == "minor" || "${1:-}" == "major" ]]; then
   BUMP="$1"
-  TARGET_VERSION=$(bump_version "$(echo "$CURRENT_VERSION" | cut -d. -f1)" "$(echo "$CURRENT_VERSION" | cut -d. -f2)" "$(echo "$CURRENT_VERSION" | cut -d. -f3)" "$BUMP")
+  TARGET_VERSION=$(bump_version "$CURRENT_VERSION" "$BUMP")
 elif [[ -z "${1:-}" ]]; then
   # no argument -> interactive prompt
-  MAJ=$(echo "$CURRENT_VERSION" | cut -d. -f1)
-  MIN=$(echo "$CURRENT_VERSION" | cut -d. -f2)
-  PAT=$(echo "$CURRENT_VERSION" | cut -d. -f3)
+  PATCH_TARGET=$(bump_version "$CURRENT_VERSION" patch)
+  MINOR_TARGET=$(bump_version "$CURRENT_VERSION" minor)
+  MAJOR_TARGET=$(bump_version "$CURRENT_VERSION" major)
   echo "${BOLD}Current version:${RESET} $CURRENT_VERSION"
   echo "Pick a bump:"
-  echo "  ${CYAN}1${RESET}) patch  -> $MAJ.$MIN.$((PAT+1))"
-  echo "  ${CYAN}2${RESET}) minor  -> $MAJ.$((MIN+1)).0"
-  echo "  ${CYAN}3${RESET}) major  -> $((MAJ+1)).0.0"
+  echo "  ${CYAN}1${RESET}) patch  -> $PATCH_TARGET"
+  echo "  ${CYAN}2${RESET}) minor  -> $MINOR_TARGET"
+  echo "  ${CYAN}3${RESET}) major  -> $MAJOR_TARGET"
   echo "  ${CYAN}q${RESET}) quit"
   read -r -p "Choice [1-3]: " choice </dev/tty
   case "$choice" in
@@ -237,11 +257,12 @@ elif [[ -z "${1:-}" ]]; then
     3) BUMP="major" ;;
     *) die "Aborted." ;;
   esac
-  TARGET_VERSION=$(bump_version "$MAJ" "$MIN" "$PAT" "$BUMP")
+  TARGET_VERSION=$(bump_version "$CURRENT_VERSION" "$BUMP")
 else
   die "Invalid version argument: '$1'
        Expected: patch | minor | major | <semver> | (nothing for interactive)"
 fi
+[[ "$TARGET_VERSION" =~ $SEMVER_REGEX ]] || die "Invalid target version: '$TARGET_VERSION'."
 
 # --- guard 5: target version must not already exist -----------------------
 if git rev-parse -q --verify "refs/tags/v$TARGET_VERSION" >/dev/null; then
@@ -326,10 +347,16 @@ MANIFESTS=("$PACKAGE_MANIFEST")
 info "Bumping $PACKAGE_MANIFEST to $TARGET_VERSION..."
 if [[ "$PACKAGE_KIND" == "npm" ]]; then
   npm version "$TARGET_VERSION" --no-git-tag-version --silent >/dev/null
+  for lockfile in package-lock.json npm-shrinkwrap.json; do
+    [[ -f "$lockfile" ]] && MANIFESTS+=("$lockfile")
+  done
   if [[ -n "$CORE" ]]; then
     info "Bumping $CORE/package.json to $TARGET_VERSION (lockstep)..."
     (cd "$CORE" && npm version "$TARGET_VERSION" --no-git-tag-version --silent >/dev/null)
     MANIFESTS+=("$CORE/package.json")
+    for lockfile in package-lock.json npm-shrinkwrap.json; do
+      [[ -f "$CORE/$lockfile" ]] && MANIFESTS+=("$CORE/$lockfile")
+    done
   fi
 else
   manifest_tmp=$(mktemp "${PACKAGE_MANIFEST}.XXXXXX") || die "Could not create a temporary plugin manifest."

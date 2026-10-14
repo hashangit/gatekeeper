@@ -27,9 +27,11 @@ type(scope): summary (work-order-tag)
   Anyone reading the log should trace a commit to its work order.
 - **The release commit** is made by `publish.sh`: `chore(release): vX.Y.Z`, containing
   the manifest bump, release notes, and the PASS Release receipt. Never hand-roll it.
-- **No push without a receipt.** The publisher requires one PASS receipt sealed to
-  the current HEAD and reruns both configured gates before it mutates the release.
-  The receipt is not release consent.
+- **No release commit or tag push without a receipt.** The publisher requires one
+  PASS receipt sealed to the current HEAD and reruns both configured gates before
+  it mutates the release. A candidate commit may be pushed after its PASS review to
+  synchronize the default branch before the publisher runs. The receipt is not
+  release consent.
 
 ## Versioning
 

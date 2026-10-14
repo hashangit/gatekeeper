@@ -20,7 +20,7 @@ const REPO_ROOT = execFileSync("git", ["rev-parse", "--show-toplevel"], { cwd: p
 const VERSION = process.argv[2];
 const STDOUT_ONLY = process.argv.includes("--stdout");
 
-if (!VERSION || !/^\d+\.\d+\.\d+$/.test(VERSION)) {
+if (!VERSION || !/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/.test(VERSION)) {
   console.error("Usage: node generate-release-notes.mjs <version> [--stdout]");
   console.error("  version must be semver, e.g. 0.3.1");
   process.exit(1);
@@ -30,20 +30,26 @@ function runGit(args) {
   return execFileSync("git", args, { cwd: REPO_ROOT, encoding: "utf8" }).trim();
 }
 
-// Previous tag; fall back to the first commit on a fresh repo.
-let prevTag;
+// Resolve the previous tag to an object ID before using it as a revision.
+// Tag names are repository data and may look like Git options.
+let previousRevision;
 try {
-  prevTag = runGit(["describe", "--tags", "--abbrev=0", "HEAD~1"]);
+  previousRevision = runGit(["describe", "--tags", "--abbrev=0", "HEAD~1"]);
 } catch {
   try {
-    prevTag = runGit(["describe", "--tags", "--abbrev=0"]);
+    previousRevision = runGit(["describe", "--tags", "--abbrev=0"]);
   } catch {
-    prevTag = runGit(["rev-list", "--max-parents=0", "HEAD"]);
+    previousRevision = runGit(["rev-list", "--max-parents=0", "HEAD"]);
   }
 }
 
-// Keep the tag as a single argv value; tags are repository data, never shell code.
-const log = runGit(["log", `${prevTag}..HEAD`, "--no-merges", "--pretty=format:%s"])
+const previousCommit = runGit([
+  "rev-parse",
+  "--verify",
+  "--end-of-options",
+  `${previousRevision}^{commit}`,
+]);
+const log = runGit(["log", "--no-merges", "--pretty=format:%s", `${previousCommit}..HEAD`])
   .split("\n")
   .map((s) => s.trim())
   .filter(Boolean);
@@ -72,7 +78,7 @@ const today = new Date().toISOString().slice(0, 10);
 const lines = [`## [${VERSION}] - ${today}`, ""];
 
 if (sections.size === 0) {
-  lines.push(`- No categorized changes since ${prevTag}. Edit these notes before publishing.`, "");
+  lines.push(`- No categorized changes since ${previousRevision}. Edit these notes before publishing.`, "");
 } else {
   for (const [section, items] of sections) {
     lines.push(`### ${section}`);
@@ -88,5 +94,5 @@ if (STDOUT_ONLY) {
 } else {
   const outPath = join(REPO_ROOT, `RELEASE_NOTES-v${VERSION}.md`);
   writeFileSync(outPath, output);
-  console.error(`Wrote ${outPath} (from ${log.length} commits since ${prevTag})`);
+  console.error(`Wrote ${outPath} (from ${log.length} commits since ${previousRevision})`);
 }

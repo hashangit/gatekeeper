@@ -25,8 +25,11 @@ job passes. Put any registry or tap credentials in narrowly scoped CI secrets.
 
 ## Setup steps
 
-1. **Copy and adapt the workflow.** Copy `.github/workflows/release.yml` into the
-   target repo. It is a minimal GitHub Release pipeline with read-only validation
+1. **Copy and adapt the workflow.** The standalone Release skill includes
+   `assets/release.yml`; copy it to `.github/workflows/<RELEASE_CI_WORKFLOW>`.
+   Router installations can obtain the template from the
+   [repository workflow](https://github.com/hashangit/gatekeeper/blob/main/.github/workflows/release.yml).
+   It is a minimal GitHub Release pipeline with read-only validation
    followed by a write-enabled release job. Add registry or tap publishing jobs only
    when the target repo needs them, and grant those jobs only the permissions and
    secrets they require.
@@ -51,5 +54,6 @@ job passes. Put any registry or tap credentials in narrowly scoped CI secrets.
 
 ## If a publish job fails mid-release
 
-Don't re-run `publish.sh` — it bumps a new version. Re-run the failed CI job on the
-**existing tag**; the skip-if-exists logic heals the half-published state.
+Don't re-run `publish.sh` — it starts a new version cut. Re-run the failed workflow
+on the **existing tag**. The workflow rechecks the tag's commit and updates an
+existing GitHub Release from the committed notes instead of creating a duplicate.

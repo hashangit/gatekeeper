@@ -30,7 +30,7 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
           python3 scripts/check-skills.py
           python3 scripts/check-release-safety.py
           python3 scripts/sync-skills.py --check
@@ -53,7 +53,7 @@ jobs:
           import sys
 
           tag = os.environ["RELEASE_TAG"]
-          if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag):
+          if not re.fullmatch(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", tag):
               sys.exit("Invalid release tag")
           try:
               sealed = subprocess.check_output(["git", "rev-parse", "HEAD^"], text=True).strip()
@@ -65,12 +65,16 @@ jobs:
               if receipt.is_symlink() or not receipt.is_file():
                   continue
               text = receipt.read_text(encoding="utf-8")
-              if not re.search(r"^Mode: RELEASE\s*$", text, re.MULTILINE):
+              if len(re.findall(r"^Mode: RELEASE\s*$", text, re.MULTILINE)) != 1:
                   continue
-              if not re.search(r"^Verdict: PASS\s*$", text, re.MULTILINE):
+              if len(re.findall(r"^Verdict: PASS\s*$", text, re.MULTILINE)) != 1:
                   continue
-              header = re.search(r"^Branch: .* \| Seal: `?([0-9a-f]{40,64})`? \| Gates:", text, re.MULTILINE)
-              if header and header.group(1) == sealed:
+              headers = re.findall(
+                  r"^Branch: [^|\r\n]+ \| Seal: `?([0-9a-f]{40,64})`? \| Gates: [^\r\n]+$",
+                  text,
+                  re.MULTILINE,
+              )
+              if len(headers) == 1 and headers[0] == sealed:
                   matches.append(receipt)
 
           if len(matches) != 1:
@@ -90,12 +94,27 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ github.sha }}
-          fetch-depth: 1
+          fetch-depth: 0
           persist-credentials: false
+      - name: Verify tag still points to the validated commit
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          tag_commit="$(git rev-parse --verify --end-of-options "refs/tags/${RELEASE_TAG}^{commit}")"
+          test "$tag_commit" = "$EXPECTED_SHA" || {
+            echo "Release tag no longer points to the validated commit." >&2
+            exit 1
+          }
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          gh release create "$RELEASE_TAG" --verify-tag --title "$RELEASE_TAG" --notes-file "RELEASE_NOTES-${RELEASE_TAG}.md"
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" --verify-tag --title "$RELEASE_TAG" --notes-file "RELEASE_NOTES-${RELEASE_TAG}.md"
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --title "$RELEASE_TAG" --notes-file "RELEASE_NOTES-${RELEASE_TAG}.md"
+          fi
